@@ -17,7 +17,7 @@ pub fn profile(c: Ctx, data: *const ui.User) !void {
     try c.w.print("<h1 class=\"title\">{f}</h1>", .{esc(name)});
 
     try c.w.writeAll("<section aria-labelledby=\"repos-heading\" class=\"mt-8\"><h2 id=\"repos-heading\" class=\"subtitle mb-4\">Repositories</h2>");
-    try html.searchForm(c, "Search repositories", try html.url(c, .{ .user_repos = .{ .name = name_array } }), search);
+    try html.searchForm(c, "repos-search", "Search repositories", "Names starting with…", try html.url(c, .{ .user_repos = .{ .name = name_array } }), search);
     if (data.repos.len == 0) {
         if (data.repos_start > 0) {
             try html.empty(c, "No more repositories", "");

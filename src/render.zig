@@ -7,6 +7,7 @@ const account = @import("pages/account.zig");
 const home = @import("pages/home.zig");
 const new_repo = @import("pages/new_repo.zig");
 const not_found = @import("pages/not_found.zig");
+const repo = @import("pages/repo.zig");
 const user = @import("pages/user.zig");
 const Ctx = html.Ctx;
 
@@ -32,7 +33,8 @@ fn body(c: Ctx, p: *const ui.Page) !void {
     switch (p.*) {
         .home => |*data| if (route == .home_users) try home.users(c, &data.users) else try home.about(c, &data.about),
         .user => |*data| try user.profile(c, data),
-        .repo, .fork => try c.w.writeAll("<div class=\"card\"><p class=\"muted\">This page isn't built yet.</p></div>"),
+        .repo => |*data| try repo.page(c, data),
+        .fork => try c.w.writeAll("<div class=\"card\"><p class=\"muted\">This page isn't built yet.</p></div>"),
         .not_found => try not_found.page(c),
     }
 }

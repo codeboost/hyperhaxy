@@ -60,6 +60,18 @@ pub fn routeUrl(c: Ctx, route: ?ui.RoutablePage) ![]const u8 {
     return url(c, route orelse return error.RouteTooLong);
 }
 
+// a url-encoded route value as text
+pub fn decode(c: Ctx, encoded: []const u8) ![]const u8 {
+    return std.Uri.percentDecodeInPlace(try c.arena.allocator().dupe(u8, encoded));
+}
+
+// a relative time with the exact utc time in its title
+pub fn time(c: Ctx, seconds: i64) !void {
+    const text = try ui.timestamp.format(c.arena.allocator(), seconds, c.session.now);
+    if (text.exact.len == 0) return c.w.print("<span>{s}</span>", .{text.relative});
+    try c.w.print("<time datetime=\"{s}\" title=\"{s}\">{s}</time>", .{ text.exact, text.exact, text.relative });
+}
+
 // the url of user `name`'s page
 pub fn userUrl(c: Ctx, name: []const u8) ![]const u8 {
     const parsed = ui.RoutablePage.Array(haxy.event.User.name_max_len).from(name) orelse return error.RouteTooLong;
@@ -97,10 +109,10 @@ pub fn field(c: Ctx, f: Field) !void {
 }
 
 // a list search form, posting to the unsearched list url plus "/search"
-pub fn searchForm(c: Ctx, label: []const u8, list_url: []const u8, search: []const u8) !void {
+pub fn searchForm(c: Ctx, id: []const u8, label: []const u8, placeholder: []const u8, list_url: []const u8, search: []const u8) !void {
     try c.w.print(
-        \\<form role="search" class="search" method="post" action="{f}/search"><label class="sr-only" for="list-search">{f}</label><input class="input" id="list-search" type="search" name="search" value="{f}" placeholder="Names starting with…"><button type="submit" class="btn btn-outline">{s}Search</button></form>
-    , .{ esc(list_url), esc(label), esc(search), icons.search });
+        \\<form role="search" class="search" method="post" action="{f}/search"><label class="sr-only" for="{s}">{f}</label><input class="input" id="{s}" type="search" name="search" value="{f}" placeholder="{f}" autocomplete="off"><button type="submit" class="btn btn-outline">{s}Search</button></form>
+    , .{ esc(list_url), id, esc(label), id, esc(search), esc(placeholder), icons.search });
 }
 
 // previous and next links, either one absent

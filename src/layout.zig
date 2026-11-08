@@ -3,6 +3,7 @@ const haxy = @import("haxy");
 const ui = haxy.ui;
 const html = @import("html.zig");
 const icons = @import("icons.zig");
+const repo_page = @import("pages/repo.zig");
 const Ctx = html.Ctx;
 const esc = html.esc;
 
@@ -66,7 +67,9 @@ pub fn begin(c: Ctx, page: *const ui.Page, title: []const u8) !void {
             \\<a href="{s}" class="btn btn-ghost btn-sm">{s}Register</a><a href="{s}" class="btn btn-outline btn-sm">{s}Log in</a>
         , .{ try html.url(c, .home_user_new), icons.user_plus, try html.url(c, .{ .home_user = .{} }), icons.log_in });
     }
-    try c.w.writeAll("</div></div></div></header>\n<main class=\"container main\">\n");
+    try c.w.writeAll("</div></div>");
+    if (page.* == .repo) try repo_page.tabs(c, &page.repo);
+    try c.w.print("</div></header>\n<main class=\"container main{s}\">\n", .{if (page.* == .repo) " main-tabs" else ""});
 }
 
 pub fn end(c: Ctx) !void {

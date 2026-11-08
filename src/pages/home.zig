@@ -23,7 +23,7 @@ pub fn about(c: Ctx, data: *const ui.Home.About) !void {
 pub fn users(c: Ctx, data: *const ui.Home.Users) !void {
     const search = data.search orelse "";
     try c.w.writeAll("<section><h1 class=\"title mb-6\">Users</h1>");
-    try html.searchForm(c, "Search users", try html.url(c, .{ .home_users = .{} }), search);
+    try html.searchForm(c, "users-search", "Search users", "Names starting with…", try html.url(c, .{ .home_users = .{} }), search);
     if (data.users.len == 0) {
         if (data.start > 0) {
             try html.empty(c, "No more users", "");
