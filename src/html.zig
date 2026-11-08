@@ -85,6 +85,8 @@ pub fn formError(c: Ctx, message: []const u8) !void {
 pub const Field = struct {
     label: []const u8,
     name: []const u8,
+    // the input's id, its name when empty
+    id: []const u8 = "",
     type: []const u8 = "text",
     value: []const u8 = "",
     invalid: bool = false,
@@ -98,7 +100,7 @@ pub const Field = struct {
 pub fn field(c: Ctx, f: Field) !void {
     try c.w.print(
         "<div><label class=\"label\" for=\"f-{s}\">{f}</label><input class=\"input{s}\" id=\"f-{s}\" name=\"{s}\" type=\"{s}\" value=\"{f}\" autocomplete=\"{s}\"",
-        .{ f.name, esc(f.label), if (f.mono) " mono" else "", f.name, f.name, f.type, esc(f.value), f.autocomplete },
+        .{ idOf(f.id, f.name), esc(f.label), if (f.mono) " mono" else "", idOf(f.id, f.name), f.name, f.type, esc(f.value), f.autocomplete },
     );
     if (f.placeholder.len != 0) try c.w.print(" placeholder=\"{f}\"", .{esc(f.placeholder)});
     if (f.invalid) try c.w.writeAll(" aria-invalid=\"true\"");
@@ -111,6 +113,8 @@ pub fn field(c: Ctx, f: Field) !void {
 pub const TextArea = struct {
     label: []const u8,
     name: []const u8,
+    // the textarea's id, its name when empty
+    id: []const u8 = "",
     value: []const u8 = "",
     rows: usize = 6,
     invalid: bool = false,
@@ -123,7 +127,7 @@ pub const TextArea = struct {
 pub fn textArea(c: Ctx, f: TextArea) !void {
     try c.w.print(
         "<div><label class=\"label\" for=\"f-{s}\">{f}</label><textarea class=\"input{s}\" id=\"f-{s}\" name=\"{s}\" rows=\"{d}\"",
-        .{ f.name, esc(f.label), if (f.mono) " mono" else "", f.name, f.name, f.rows },
+        .{ idOf(f.id, f.name), esc(f.label), if (f.mono) " mono" else "", idOf(f.id, f.name), f.name, f.rows },
     );
     if (f.invalid) try c.w.writeAll(" aria-invalid=\"true\"");
     if (f.required) try c.w.writeAll(" required");
@@ -131,6 +135,25 @@ pub fn textArea(c: Ctx, f: TextArea) !void {
     try c.w.print(">\n{f}</textarea>", .{esc(f.value)});
     if (f.hint.len != 0) try c.w.print("<p class=\"hint\">{f}</p>", .{esc(f.hint)});
     try c.w.writeAll("</div>");
+}
+
+fn idOf(id: []const u8, name: []const u8) []const u8 {
+    return if (id.len == 0) name else id;
+}
+
+pub const Choice = struct { value: []const u8, label: []const u8, hint: []const u8 };
+
+// a labelled group of radio buttons, `checked` selected
+pub fn radios(c: Ctx, legend: []const u8, name: []const u8, choices: []const Choice, checked: []const u8, hint: []const u8) !void {
+    try c.w.print("<fieldset class=\"fieldset\"><legend class=\"label\">{s}</legend><div class=\"choices\">", .{legend});
+    for (choices) |choice| {
+        try c.w.print(
+            \\<label class="choice"><input type="radio" name="{s}" value="{s}"{s}><span><span class="choice-label">{s}</span><span class="choice-hint">{s}</span></span></label>
+        , .{ name, choice.value, if (std.mem.eql(u8, choice.value, checked)) " checked" else "", choice.label, choice.hint });
+    }
+    try c.w.writeAll("</div>");
+    if (hint.len != 0) try c.w.print("<p class=\"hint\">{s}</p>", .{hint});
+    try c.w.writeAll("</fieldset>");
 }
 
 // who wrote something, as plain text
@@ -151,7 +174,7 @@ pub fn author(c: Ctx, value: ui.Author) !void {
 }
 
 // someone's initial in a circle; the name beside it says who
-pub fn avatar(c: Ctx, value: ui.Author, size: enum { sm, md, lg }) !void {
+pub fn avatar(c: Ctx, value: ui.Author, size: enum { md, lg }) !void {
     const text = authorText(value);
     const len = if (text.len == 0) 0 else std.unicode.utf8ByteSequenceLength(text[0]) catch 1;
     try c.w.print("<span class=\"avatar avatar-{s}\" aria-hidden=\"true\">{f}</span>", .{ @tagName(size), esc(if (len == 0) "?" else text[0..@min(len, text.len)]) });

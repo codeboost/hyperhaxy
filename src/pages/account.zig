@@ -4,6 +4,7 @@ const ui = haxy.ui;
 const evt = haxy.event;
 const html = @import("../html.zig");
 const icons = @import("../icons.zig");
+const settings_page = @import("settings.zig");
 const Ctx = html.Ctx;
 const esc = html.esc;
 
@@ -243,27 +244,5 @@ fn keys(c: Ctx, data: *const ui.UserKeys, route: ui.RoutablePage) !void {
 
 fn delete(c: Ctx, route: ui.RoutablePage) !void {
     const name = c.session.user_name orelse unreachable;
-    const saved = if (c.feedback(.delete)) |value| if (value.target == .user) value else null else null;
-    try c.w.print(
-        \\<section class="danger"><h2 class="danger-title">Delete account</h2><div class="mt-3 text-sm muted"><p>This permanently deletes the account <strong class="strong">{f}</strong> and every repository and fork you own, with all of their history, issues, discussions and patches.</p><p class="mt-2">You won't be able to log in again, your SSH keys stop working, and this can't be undone.</p></div>
-        \\<form class="form mt-6 narrow" method="post" action="{f}/delete">
-    , .{ esc(name), esc(try html.url(c, route.withUserTab(.{ .view = .delete }))) });
-    if (saved) |value| try html.formError(c, switch (value.failure) {
-        .wrong_confirm => "The name you typed doesn't match.",
-        .wrong_password => "That password is wrong.",
-    });
-    try html.field(c, .{
-        .label = try c.arena.allocator().print("Type {s} to confirm", .{name}),
-        .name = "confirm",
-        .value = if (saved) |value| value.confirm else "",
-        .invalid = if (saved) |value| value.failure == .wrong_confirm else false,
-    });
-    try html.field(c, .{
-        .label = "Password",
-        .name = "password",
-        .type = "password",
-        .invalid = if (saved) |value| value.failure == .wrong_password else false,
-        .autocomplete = "current-password",
-    });
-    try c.w.writeAll("<div><button type=\"submit\" class=\"btn btn-destructive\">Permanently delete this account</button></div></form></section>");
+    try settings_page.deleteForm(c, .{ .user = name }, try html.url(c, route.withUserTab(.{ .view = .delete })));
 }

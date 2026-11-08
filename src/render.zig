@@ -4,6 +4,7 @@ const ui = haxy.ui;
 const html = @import("html.zig");
 const layout = @import("layout.zig");
 const account = @import("pages/account.zig");
+const fork = @import("pages/fork.zig");
 const home = @import("pages/home.zig");
 const new_repo = @import("pages/new_repo.zig");
 const not_found = @import("pages/not_found.zig");
@@ -34,7 +35,7 @@ fn body(c: Ctx, p: *const ui.Page) !void {
         .home => |*data| if (route == .home_users) try home.users(c, &data.users) else try home.about(c, &data.about),
         .user => |*data| try user.profile(c, data),
         .repo => |*data| try repo.page(c, data),
-        .fork => try c.w.writeAll("<div class=\"card\"><p class=\"muted\">This page isn't built yet.</p></div>"),
+        .fork => |*data| try fork.page(c, data),
         .not_found => try not_found.page(c),
     }
 }

@@ -7,6 +7,7 @@ const PatchFailure = ui.Session.FormFeedback.PatchFailure;
 const html = @import("../html.zig");
 const icons = @import("../icons.zig");
 const comments = @import("comments.zig");
+const patch = @import("patch.zig");
 const threads = @import("threads.zig");
 const Ctx = html.Ctx;
 const esc = html.esc;
@@ -22,7 +23,8 @@ pub fn page(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind), form:
         .new_comment, .edit_comment => try commentForm(c, kind, data, form == .edit_comment),
         .remove => try remove(c, kind, data),
         .resolve => if (comptime @hasField(Data(kind), "conflict")) try resolve(c, kind, data) else unreachable,
-        .publish, .merge => try later(c, kind, data),
+        .publish => if (kind == .patch) try patch.publishConfirm(c, data) else unreachable,
+        .merge => if (kind == .patch) try patch.mergeConfirm(c, data) else unreachable,
     }
 }
 
@@ -83,12 +85,12 @@ fn savedFields(c: Ctx, comptime kind: evt.EventKind) ?Fields {
     return result;
 }
 
-// title, labels and description, plus a patch's branches
-fn threadFields(c: Ctx, comptime kind: evt.EventKind, fields: Fields, failure: ?PatchFailure, source: bool) !void {
+// title, labels and description, plus a patch's branches; `id_prefix` keeps a second form's ids apart
+fn threadFields(c: Ctx, comptime kind: evt.EventKind, comptime id_prefix: []const u8, fields: Fields, failure: ?PatchFailure, source: bool) !void {
     if (failure) |value| try html.formError(c, failureText(value));
-    try html.field(c, .{ .label = "Title", .name = "title", .value = fields.title, .invalid = failure == .required_title });
-    try html.field(c, .{ .label = "Labels", .name = "labels", .value = fields.labels, .hint = "Separate labels with spaces." });
-    try html.textArea(c, .{ .label = "Description", .name = "description", .value = fields.description, .rows = 12, .hint = "Markdown." });
+    try html.field(c, .{ .label = "Title", .name = "title", .id = id_prefix ++ "title", .value = fields.title, .invalid = failure == .required_title });
+    try html.field(c, .{ .label = "Labels", .name = "labels", .id = id_prefix ++ "labels", .value = fields.labels, .hint = "Separate labels with spaces." });
+    try html.textArea(c, .{ .label = "Description", .name = "description", .id = id_prefix ++ "description", .value = fields.description, .rows = 12, .hint = "Markdown." });
     if (kind == .patch) {
         const branches_failed = failure == .invalid_source_branch or failure == .same_branch or failure == .unrelated_branches;
         if (source) try html.field(c, .{
@@ -102,6 +104,7 @@ fn threadFields(c: Ctx, comptime kind: evt.EventKind, fields: Fields, failure: ?
         try html.field(c, .{
             .label = "Target branch",
             .name = "target_branch",
+            .id = id_prefix ++ "target_branch",
             .value = fields.target_branch,
             .invalid = failure == .invalid_target_branch or (!source and branches_failed),
             .mono = true,
@@ -113,21 +116,39 @@ fn threadFields(c: Ctx, comptime kind: evt.EventKind, fields: Fields, failure: ?
 fn newThread(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind)) !void {
     const n = comptime threads.names(kind);
     const back = try threads.listUrl(c, kind, data.identity, std.enums.values(Data(kind).Status)[0], "");
+    const action = try html.routeUrl(c, RoutablePage.repoThreadNewRoute(kind, data.identity));
     const saved = savedFields(c, kind);
-    var fields = saved orelse Fields{};
-    switch (kind) {
-        .patch => if (saved == null) {
-            fields.target_branch = data.default_target_branch;
-        },
-        else => {},
-    }
+    const failure = savedFailure(c, kind);
+    // drafts live on a server, and a failed fork form comes back to its own form
+    const fork_form = kind == .patch and c.server();
+    const fork_failed = fork_form and forkFailed(c);
+    var fields = if (fork_failed) Fields{} else saved orelse Fields{};
+    if (kind == .patch and (saved == null or fork_failed)) fields.target_branch = data.default_target_branch;
     try c.w.writeAll("<section class=\"wide\">");
     try threads.backLink(c, back, n.title);
     try c.w.writeAll("<h2 class=\"title mt-3\">New " ++ n.noun ++ "</h2>");
-    if (kind == .patch and c.server()) try c.w.writeAll("<p class=\"mt-2 text-sm muted\">This opens a patch from a branch of this repository. Starting one from a new fork comes in a later version.</p>");
-    try c.w.print("<form aria-label=\"New {s}\" class=\"form mt-6\" method=\"post\" action=\"{f}\">", .{ n.noun, esc(try html.routeUrl(c, RoutablePage.repoThreadNewRoute(kind, data.identity))) });
-    try threadFields(c, kind, fields, savedFailure(c, kind), true);
-    try c.w.print("<div class=\"actions\"><button type=\"submit\" class=\"btn\">{s}Create {s}</button><a href=\"{f}\" class=\"btn btn-ghost\">Cancel</a></div></form></section>", .{ icons.plus, n.noun, esc(back) });
+    if (kind == .patch) try c.w.writeAll("<p class=\"mt-2 text-sm muted\">Propose a branch of this repository; pushes to it update the patch.</p>");
+    try c.w.print("<form aria-label=\"New {s}\" class=\"form mt-6\" method=\"post\" action=\"{f}\">", .{ n.noun, esc(action) });
+    try threadFields(c, kind, "", fields, if (fork_failed) null else failure, true);
+    try c.w.print("<div class=\"actions\"><button type=\"submit\" class=\"btn\">{s}Create {s}</button><a href=\"{f}\" class=\"btn btn-ghost\">Cancel</a></div></form>", .{ icons.plus, n.noun, esc(back) });
+    if (fork_form) {
+        var fork_fields = if (fork_failed) saved orelse Fields{} else Fields{};
+        if (!fork_failed) fork_fields.target_branch = data.default_target_branch;
+        // a fork-backed draft is the same post without a source branch
+        try c.w.print(
+            \\<details class="disclosure mt-8"{s}><summary class="disclosure-summary">{s}No branch to propose from? Start with a new fork</summary><div class="disclosure-body"><p class="text-sm muted">Haxy copies the repository into a fork of your own, where you push your commits. The patch stays your draft until you publish it.</p><form aria-label="New draft" class="form mt-6" method="post" action="{f}">
+        , .{ if (fork_failed) " open" else "", icons.git_fork, esc(action) });
+        try threadFields(c, kind, "fork-", fork_fields, if (fork_failed) failure else null, false);
+        try c.w.print("<div class=\"actions\"><button type=\"submit\" class=\"btn\">{s}Start with a new fork</button></div></form></div></details>", .{icons.git_fork});
+    }
+    try c.w.writeAll("</section>");
+}
+
+// whether the patch form that failed was the fork form, which sends no source branch
+fn forkFailed(c: Ctx) bool {
+    const saved = c.feedback(.patch) orelse return false;
+    const fields = saved.fields orelse return false;
+    return fields.source_kind == .fork;
 }
 
 fn editThread(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind)) !void {
@@ -148,7 +169,7 @@ fn editThread(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind)) !vo
     try threads.backLink(c, back, "Back to the " ++ n.noun);
     try c.w.print("<h2 class=\"title mt-3\">Edit {s}</h2><p class=\"mt-1 muted\">{f}</p>", .{ n.noun, esc(event.title) });
     try c.w.print("<form aria-label=\"Edit {s}\" class=\"form mt-6\" method=\"post\" action=\"{f}\">", .{ n.noun, esc(try html.routeUrl(c, RoutablePage.repoThreadEditRoute(kind, data.identity, entry.id))) });
-    try threadFields(c, kind, fields, savedFailure(c, kind), false);
+    try threadFields(c, kind, "", fields, savedFailure(c, kind), false);
     try c.w.print("<div class=\"actions\"><button type=\"submit\" class=\"btn\">{s}Save changes</button><a href=\"{f}\" class=\"btn btn-ghost\">Cancel</a></div></form></section>", .{ icons.save, esc(back) });
 }
 
@@ -326,13 +347,4 @@ fn useUrl(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind), name: [
         try picks.appendSlice(aa, name);
     }
     return html.routeUrl(c, Data(kind).resolveRoute(data.identity, data.selected_id, picks.items));
-}
-
-// publishing and merging patches come in a later phase
-fn later(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind)) !void {
-    const n = comptime threads.names(kind);
-    const entry = data.selectedThread() orelse return threads.notFound(c, kind, data);
-    try c.w.writeAll("<section class=\"medium\">");
-    try threads.backLink(c, try threads.threadUrl(c, kind, data.identity, entry.id), "Back to the " ++ n.noun);
-    try c.w.print("<h2 class=\"title mt-3\">{f}</h2><p class=\"mt-3 muted\">Publishing and merging patches come in a later version of this page.</p></section>", .{esc(entry.record.event.title)});
 }

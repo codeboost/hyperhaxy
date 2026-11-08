@@ -7,6 +7,7 @@ const html = @import("../html.zig");
 const icons = @import("../icons.zig");
 const markdown = @import("../markdown.zig");
 const comments = @import("comments.zig");
+const patch = @import("patch.zig");
 const thread_forms = @import("thread_forms.zig");
 const Ctx = html.Ctx;
 const esc = html.esc;
@@ -371,7 +372,7 @@ fn detail(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind), entry: 
             .{ icons.triangle_alert, n.noun, esc(try html.routeUrl(c, Data(kind).resolveRoute(data.identity, entry.id, ""))) },
         );
     }
-    if (kind == .patch) try c.w.writeAll("<p class=\"mt-4 text-sm muted\">The patch's changes, merging and reviewing come in a later version of this page.</p>");
+    if (kind == .patch) try patch.sections(c, data, entry);
 
     try c.w.writeAll("<div class=\"thread-columns\"><div class=\"thread-main\">");
     try openingPost(c, kind, data, entry, false);
@@ -412,6 +413,7 @@ fn actions(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind), entry:
                 try c.w.print("<form method=\"post\" action=\"{f}/open\"><button type=\"submit\" class=\"btn btn-outline btn-sm\">{s}Reopen {s}</button></form>", .{ esc(thread_url), icons.circle_dot, n.noun });
             }
         }
+        if (kind == .patch and draft) try c.w.print("<a href=\"{f}\" class=\"btn btn-sm\">{s}Publish</a>", .{ esc(try html.routeUrl(c, Data(kind).publishRoute(data.identity, entry.id))), icons.send });
         try c.w.print("<a href=\"{f}\" class=\"btn btn-outline btn-sm\">{s}Edit</a>", .{ esc(try html.routeUrl(c, RoutablePage.repoThreadEditRoute(kind, data.identity, entry.id))), icons.pencil });
     }
     try c.w.print("<a href=\"{f}\" class=\"btn btn-outline btn-sm btn-danger\">{s}Remove</a></div>", .{ esc(try html.routeUrl(c, RoutablePage.repoThreadRemoveRoute(kind, data.identity, entry.id, "", ""))), icons.trash_2 });

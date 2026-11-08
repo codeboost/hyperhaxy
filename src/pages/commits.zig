@@ -13,12 +13,12 @@ const short_oid_len = 10;
 
 const CommitStats = @typeInfo(@FieldType(Commits.Commit, "stats")).optional.child;
 
-// the commits tab: the history at a ref, or one commit's whole message
-pub fn panel(c: Ctx, data: *const ui.Repo, cm: *const Commits) !void {
-    if (cm.no_commits) return files.noCommits(c, data, "commits-remote");
+// the commits tab: the history at a ref, or one commit's whole message; a fork has no repo_data
+pub fn panel(c: Ctx, cm: *const Commits, repo_data: ?*const ui.Repo) !void {
+    if (cm.no_commits) return files.noCommits(c, cm.handle, "commits-remote");
     if (cm.message and cm.commits.len > 0) return commitView(c, cm, &cm.commits[0]);
 
-    try refLine(c, data, cm);
+    try refLine(c, cm, repo_data);
     if (c.server() and cm.search_available) {
         try c.w.writeAll("<div class=\"mt-4\">");
         try html.searchForm(c, "commits-search", "Search commits", "Words in commit messages", try html.routeUrl(c, searchRoute(cm)), cm.search orelse "");
@@ -56,7 +56,7 @@ fn pageRoute(cm: *const Commits, oid: []const u8) ?ui.RoutablePage {
 }
 
 // which ref the history is read at, and where else to go from it
-fn refLine(c: Ctx, data: *const ui.Repo, cm: *const Commits) !void {
+fn refLine(c: Ctx, cm: *const Commits, repo_data: ?*const ui.Repo) !void {
     const route = c.session.current_page;
     try c.w.writeAll("<section aria-label=\"Ref\" class=\"ref-line\">");
     if (route == .repo_commits and route.repo_commits.merge.len != 0) {
@@ -72,8 +72,10 @@ fn refLine(c: Ctx, data: *const ui.Repo, cm: *const Commits) !void {
     }
     if (cm.base_oid.len != 0) try c.w.print("<span class=\"muted\">back to <code class=\"mono\">{f}</code></span>", .{esc(short(cm.base_oid))});
     try c.w.print("<a href=\"{f}\" class=\"link\">Browse files</a>", .{esc(try html.routeUrl(c, cm.handle.location.filesRoute(cm.ref_or_oid, cm.ref_or_oid_value, "", 0)))});
-    try c.w.print("<a href=\"{f}\" class=\"link\" data-tab=\"panel-refs\">Branches and tags</a>", .{esc(try repo.tabHref(c, data, .refs))});
-    if (repo.explicitRef(route)) try c.w.print("<a href=\"{f}\" class=\"link\">Default branch</a>", .{esc(try html.routeUrl(c, ui.RoutablePage.repoCommitsRoute(repo.identity(data), null, "", "")))});
+    if (repo_data) |data| {
+        try c.w.print("<a href=\"{f}\" class=\"link\" data-tab=\"panel-refs\">Branches and tags</a>", .{esc(try repo.tabHref(c, data, .refs))});
+        if (repo.explicitRef(route)) try c.w.print("<a href=\"{f}\" class=\"link\">Default branch</a>", .{esc(try html.routeUrl(c, ui.RoutablePage.repoCommitsRoute(repo.identity(data), null, "", "")))});
+    }
     try c.w.writeAll("</section>");
 }
 

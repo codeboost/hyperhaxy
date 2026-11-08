@@ -12,22 +12,25 @@ const esc = html.esc;
 // a longer markdown file shows as numbered source, as in haxy
 const max_markdown_lines = 2000;
 
-// the files tab: the toolbar, then a file or a directory listing
-pub fn panel(c: Ctx, data: *const ui.Repo) !void {
-    const files = &data.files;
-    if (files.no_commits) return noCommits(c, data, "files-remote");
-    try toolbar(c, data);
-    if (selectedEntry(files)) |entry| return fileView(c, data, entry);
-    try listing(c, data);
+// the files tab: the toolbar, then a file or a listing; a fork has no repo_data
+pub fn panel(c: Ctx, files: *const Files, name: []const u8, repo_data: ?*const ui.Repo) !void {
+    if (files.no_commits) return noCommits(c, files.handle, "files-remote");
+    try toolbar(c, files, repo_data);
+    if (selectedEntry(files)) |entry| return fileView(c, files, name, entry);
+    try listing(c, files, name);
 }
 
 // a repo without commits, with the remote to push to for a viewer who can
-pub fn noCommits(c: Ctx, data: *const ui.Repo, copy_id: []const u8) !void {
-    const ssh_url = if (c.server() and data.handle.canWrite()) c.session.git_ssh_url else null;
+pub fn noCommits(c: Ctx, handle: ui.RepoHandle, copy_id: []const u8) !void {
+    const ssh_url = if (c.server() and handle.canWrite()) c.session.git_ssh_url else null;
     const base = ssh_url orelse return html.empty(c, "No commits yet", "Nothing has been pushed to this repository.");
     try html.empty(c, "No commits yet", "Push a branch to this repository to see its files and history.");
     try c.w.print("<section aria-labelledby=\"{s}-heading\" class=\"commands-card\"><h2 id=\"{s}-heading\" class=\"commands-title\">Push an existing repository</h2><ul class=\"commands\">", .{ copy_id, copy_id });
-    try command(c, "SSH", copy_id, try c.arena.allocator().print("git remote add origin {s}/{s}", .{ base, repo.identity(data) }));
+    const remote = switch (handle.location) {
+        .repo => |identity| try c.arena.allocator().print("{s}/{s}", .{ base, identity }),
+        .fork => |f| try c.arena.allocator().print("{s}/{s}+{s}", .{ base, f.identity, f.id }),
+    };
+    try command(c, "SSH", copy_id, try c.arena.allocator().print("git remote add origin {s}", .{remote}));
     try c.w.writeAll("</ul></section>");
 }
 
@@ -38,17 +41,17 @@ pub fn command(c: Ctx, label: []const u8, id: []const u8, text: []const u8) !voi
     , .{ label, id, esc(text), id, label, icons.copy });
 }
 
-fn toolbar(c: Ctx, data: *const ui.Repo) !void {
-    const files = &data.files;
-    const id = repo.identity(data);
+fn toolbar(c: Ctx, files: *const Files, repo_data: ?*const ui.Repo) !void {
     try c.w.writeAll("<section aria-label=\"Ref\" class=\"toolbar\">");
-    try refPicker(c, data);
-    if (repo.explicitRef(c.session.current_page)) try c.w.print(
-        "<a href=\"{f}\" class=\"toolbar-link\">{s}Default branch</a>",
-        .{ esc(try html.routeUrl(c, ui.RoutablePage.repoFilesRoute(id, null, "", "", 0))), icons.undo_2 },
-    );
-    try refCount(c, data, "Branch", "Branches", icons.git_branch, &data.refs.branches);
-    try refCount(c, data, "Tag", "Tags", icons.tag, &data.refs.tags);
+    if (repo_data) |data| {
+        try refPicker(c, data);
+        if (repo.explicitRef(c.session.current_page)) try c.w.print(
+            "<a href=\"{f}\" class=\"toolbar-link\">{s}Default branch</a>",
+            .{ esc(try html.routeUrl(c, ui.RoutablePage.repoFilesRoute(repo.identity(data), null, "", "", 0))), icons.undo_2 },
+        );
+        try refCount(c, data, "Branch", "Branches", icons.git_branch, &data.refs.branches);
+        try refCount(c, data, "Tag", "Tags", icons.tag, &data.refs.tags);
+    }
     try c.w.writeAll("<div class=\"toolbar-end\">");
     if (files.find_available) {
         const action = try html.routeUrl(c, files.handle.location.filesRoute(files.ref_or_oid, files.ref_or_oid_value, "", 0));
@@ -56,7 +59,7 @@ fn toolbar(c: Ctx, data: *const ui.Repo) !void {
             \\<form role="search" aria-label="Go to file" class="find" method="post" action="{f}/search">{s}<input name="search" type="search" value="{f}" aria-label="Go to file" placeholder="Go to file" autocomplete="off" spellcheck="false"></form>
         , .{ esc(action), icons.search, esc(files.find orelse "") });
     }
-    if (c.server()) try codeMenu(c, data);
+    if (repo_data) |data| if (c.server()) try codeMenu(c, data);
     try c.w.writeAll("</div></section>");
 }
 
@@ -134,13 +137,12 @@ fn selectedEntry(files: *const Files) ?*const Files.Entry {
 }
 
 // the path from the repo root, each directory leading back up, plus the history at this ref
-fn pathBar(c: Ctx, data: *const ui.Repo, path: []const u8, attached: bool) !void {
-    const files = &data.files;
+fn pathBar(c: Ctx, files: *const Files, name: []const u8, path: []const u8, attached: bool) !void {
     try c.w.print("<div class=\"path-bar{s}\"><nav aria-label=\"Path\" class=\"crumbs\">", .{if (attached) " attached" else ""});
     if (path.len == 0) {
-        try c.w.print("<span aria-current=\"page\" class=\"strong\">{f}</span>", .{esc(data.header.name)});
+        try c.w.print("<span aria-current=\"page\" class=\"strong\">{f}</span>", .{esc(name)});
     } else {
-        try c.w.print("<a href=\"{f}\" class=\"link\">{f}</a>", .{ esc(try html.routeUrl(c, plainRoute(files, ""))), esc(data.header.name) });
+        try c.w.print("<a href=\"{f}\" class=\"link\">{f}</a>", .{ esc(try html.routeUrl(c, plainRoute(files, ""))), esc(name) });
         var segments = std.mem.splitScalar(u8, path, '/');
         while (segments.next()) |segment| {
             const end = segments.index orelse {
@@ -164,15 +166,14 @@ fn plainRoute(files: *const Files, path: []const u8) ?ui.RoutablePage {
     return files.handle.location.filesRoute(files.ref_or_oid, files.ref_or_oid_value, path, 0);
 }
 
-fn listing(c: Ctx, data: *const ui.Repo) !void {
-    const files = &data.files;
+fn listing(c: Ctx, files: *const Files, name: []const u8) !void {
     const aa = c.arena.allocator();
     if (files.find) |term| {
         try c.w.print(
             "<div class=\"path-bar attached\"><p class=\"text-sm\">Files matching <strong class=\"strong\">“{f}”</strong></p><a href=\"{f}\" class=\"toolbar-link\">Clear search</a></div>",
             .{ esc(term), esc(try html.routeUrl(c, plainRoute(files, ""))) },
         );
-    } else try pathBar(c, data, files.dir, true);
+    } else try pathBar(c, files, name, files.dir, true);
 
     if (files.entries.len == 0 and files.dir.len == 0) {
         if (files.find) |term| return html.empty(c, try aa.print("No files match “{s}”", .{term}), "");
@@ -217,10 +218,9 @@ fn listing(c: Ctx, data: *const ui.Repo) !void {
     }
 }
 
-fn fileView(c: Ctx, data: *const ui.Repo, entry: *const Files.Entry) !void {
-    const files = &data.files;
+fn fileView(c: Ctx, files: *const Files, name: []const u8, entry: *const Files.Entry) !void {
     const path = try Files.childDir(c.arena.allocator(), files.dir, entry.name);
-    try pathBar(c, data, path, false);
+    try pathBar(c, files, name, path, false);
     if (files.find != null) try c.w.print(
         "<p class=\"mt-3 text-sm\"><a href=\"{f}\" class=\"link\">Back to the results</a></p>",
         .{esc(try html.routeUrl(c, files.filesRoute("", 0)))},

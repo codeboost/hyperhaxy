@@ -4,9 +4,12 @@ const ui = haxy.ui;
 const html = @import("../html.zig");
 const commits = @import("commits.zig");
 const diff = @import("diff.zig");
+const events = @import("events.zig");
 const files = @import("files.zig");
 const refs = @import("refs.zig");
+const settings = @import("settings.zig");
 const threads = @import("threads.zig");
+const undo = @import("undo.zig");
 const Ctx = html.Ctx;
 const esc = html.esc;
 
@@ -33,7 +36,7 @@ pub fn explicitRef(route: ui.RoutablePage) bool {
 
 // the default branch's name, when the page knows it
 pub fn defaultBranch(c: Ctx, data: *const ui.Repo) !?[]const u8 {
-    if (data.settings) |*settings| return settings.branches.default_branch;
+    if (data.settings) |*value| return value.branches.default_branch;
     if (data.changes == .commits and data.changes.commits.default_branch.len != 0) return try html.decode(c, data.changes.commits.default_branch);
     if (!explicitRef(c.session.current_page) and data.files.ref_or_oid == .branch) return try html.decode(c, data.files.ref_or_oid_value);
     return null;
@@ -127,16 +130,18 @@ pub fn page(c: Ctx, data: *const ui.Repo) !void {
         if (!shown(data, panel)) continue;
         try c.w.print("<div id=\"panel-{s}\" class=\"panel\" data-panel{s}>", .{ @tagName(panel), if (panel == current) "" else " hidden" });
         switch (panel) {
-            .files => try files.panel(c, data),
+            .files => try files.panel(c, &data.files, data.header.name, data),
             .changes => switch (data.changes) {
-                .commits => |*cm| try commits.panel(c, data, cm),
+                .commits => |*cm| try commits.panel(c, cm, data),
                 .diff => |*d| try diff.panel(c, d),
             },
             .refs => try refs.panel(c, data),
             .discussions => try threads.panel(c, .discuss, &data.discussions),
             .issues => try threads.panel(c, .issue, &data.issues),
             .patches => try threads.panel(c, .patch, &data.patches),
-            .events, .undo, .settings => try c.w.writeAll("<div class=\"card\"><p class=\"muted\">This section isn't built yet.</p></div>"),
+            .events => try events.panel(c, &data.events),
+            .undo => if (data.undo) |*value| try undo.panel(c, value),
+            .settings => if (data.settings) |*value| try settings.panel(c, data, value),
         }
         try c.w.writeAll("</div>");
     }
