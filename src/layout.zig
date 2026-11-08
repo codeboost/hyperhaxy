@@ -15,7 +15,6 @@ pub fn begin(c: Ctx, page: *const ui.Page, title: []const u8) !void {
         \\<head>
         \\<meta charset="utf-8">
         \\<meta name="viewport" content="width=device-width, initial-scale=1">
-        \\<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"...","swap":true}]}'>
         \\
     );
     if (title.len == 0)
@@ -24,10 +23,9 @@ pub fn begin(c: Ctx, page: *const ui.Page, title: []const u8) !void {
         try c.w.print("<title>{f} · haxy</title>\n", .{esc(title)});
     try c.w.writeAll(
         \\<link rel="stylesheet" href="/style.css">
-        \\<script src="/htmx.min.js" defer></script>
         \\<script src="/app.js" defer></script>
         \\</head>
-        \\<body hx-boost="true">
+        \\<body>
         \\<header class="site-header"><div class="container"><div class="header-row">
     );
     try c.w.print("<a href=\"{s}\" class=\"logo\" aria-label=\"haxy home\"><span class=\"logo-mark\">{s}</span><span class=\"logo-text\">haxy<span class=\"logo-dot\">.</span></span></a>", .{ try html.url(c, .home_about), icons.git_branch });

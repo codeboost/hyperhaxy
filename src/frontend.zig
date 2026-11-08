@@ -7,7 +7,6 @@ pub const frontend: haxy.web.Frontend = .{
         .{ .path = "index.html", .content_type = "text/html; charset=utf-8", .body = @embedFile("embed/index.html") },
         .{ .path = "style.css", .content_type = "text/css; charset=utf-8", .body = @embedFile("embed/style.css") },
         .{ .path = "app.js", .content_type = "text/javascript; charset=utf-8", .body = @embedFile("embed/app.js") },
-        .{ .path = "htmx.min.js", .content_type = "text/javascript; charset=utf-8", .body = @embedFile("embed/htmx.min.js") },
     },
     .render_html = render.page,
 };

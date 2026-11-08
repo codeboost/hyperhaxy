@@ -54,7 +54,7 @@
     return null
   }
 
-  // capture phase, so htmx's boosted link handler never sees a tab switch
+  // a tab switch shows its panel without loading the page
   document.addEventListener("click", function (event) {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     var link = event.target instanceof Element ? event.target.closest("a[data-tab]") : null
@@ -62,14 +62,12 @@
     var panel = panelOf(link)
     if (!panel) return
     event.preventDefault()
-    event.stopPropagation()
     closeMenus(null)
     selectPanel(panel)
     if (link.href !== location.href) history.pushState({ tab: true }, "", link.href)
-  }, true)
+  })
 
   window.addEventListener("popstate", function (event) {
-    if (event.state && event.state.htmx) return
     var panel = panelFor(location.pathname)
     if (panel) selectPanel(panel)
     else if (event.state && event.state.tab) location.reload()
@@ -153,5 +151,4 @@
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", setup)
   else setup()
-  document.addEventListener("htmx:load", setup)
 })()

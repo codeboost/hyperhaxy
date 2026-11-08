@@ -481,7 +481,7 @@ fn sidebar(c: Ctx, comptime kind: evt.EventKind, data: *const Data(kind), entry:
                     try c.arena.allocator().print("/attachment:{s}", .{&attachment.id})
                 else
                     try c.arena.allocator().print("/{s}/attachment:{s}", .{ data.identity, &attachment.id });
-                try c.w.print("<li class=\"side-item\"><span class=\"muted\">{s}</span><a href=\"{f}\" class=\"link\" hx-boost=\"false\">{f}</a>", .{ icons.paperclip, esc(href), esc(attachment.name) });
+                try c.w.print("<li class=\"side-item\"><span class=\"muted\">{s}</span><a href=\"{f}\" class=\"link\">{f}</a>", .{ icons.paperclip, esc(href), esc(attachment.name) });
                 if (entry.can_modify) try c.w.print(
                     "<a href=\"{f}\" class=\"icon-button\" aria-label=\"Remove {f}\" title=\"Remove {f}\">{s}</a>",
                     .{ esc(try html.routeUrl(c, RoutablePage.repoThreadRemoveRoute(kind, data.identity, entry.id, "", &attachment.id))), esc(attachment.name), esc(attachment.name), icons.x },
