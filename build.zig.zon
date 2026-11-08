@@ -1,0 +1,16 @@
+.{
+    .name = .hyperhaxy,
+    .version = "0.0.0",
+    .dependencies = .{
+        .haxy = .{
+            .url = "git+https://github.com/xit-vcs/haxy#acd0f1afa9ff0357a2954c123f6796f947cc10eb",
+            .hash = "haxy-0.0.0-cS86Ft8NPAAiy-RZXz5S1dQ2_3EjSq3tg6SJrBjZVGwT",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .fingerprint = 0xfc56045916fe1e90,
+}
