@@ -115,6 +115,32 @@
     }, select)
   })
 
+  // attachments upload as soon as a file is chosen: the file is the whole body, its name in a header
+  document.addEventListener("change", function (event) {
+    var input = event.target
+    if (!(input instanceof HTMLInputElement) || !input.hasAttribute("data-attach")) return
+    var file = input.files && input.files[0]
+    if (!file) return
+    var error = input.parentElement.querySelector("[data-attach-error]")
+    function fail(message) {
+      input.disabled = false
+      input.value = ""
+      if (!error) return
+      error.textContent = message || "The upload failed."
+      error.hidden = false
+    }
+    input.disabled = true
+    if (error) error.hidden = true
+    fetch(input.getAttribute("data-attach"), {
+      method: "POST",
+      headers: { "x-attachment-name": encodeURIComponent(file.name) },
+      body: file,
+    }).then(function (response) {
+      if (response.ok) return location.reload()
+      return response.text().then(fail)
+    }, function () { fail("") })
+  })
+
   // reveal the js-only controls and match the panel to the url
   function setup() {
     document.querySelectorAll("[data-js][hidden]").forEach(function (element) {

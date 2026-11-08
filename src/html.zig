@@ -108,6 +108,55 @@ pub fn field(c: Ctx, f: Field) !void {
     try c.w.writeAll("</div>");
 }
 
+pub const TextArea = struct {
+    label: []const u8,
+    name: []const u8,
+    value: []const u8 = "",
+    rows: usize = 6,
+    invalid: bool = false,
+    required: bool = false,
+    hint: []const u8 = "",
+    mono: bool = true,
+};
+
+// a labelled textarea, markdown bodies in mono
+pub fn textArea(c: Ctx, f: TextArea) !void {
+    try c.w.print(
+        "<div><label class=\"label\" for=\"f-{s}\">{f}</label><textarea class=\"input{s}\" id=\"f-{s}\" name=\"{s}\" rows=\"{d}\"",
+        .{ f.name, esc(f.label), if (f.mono) " mono" else "", f.name, f.name, f.rows },
+    );
+    if (f.invalid) try c.w.writeAll(" aria-invalid=\"true\"");
+    if (f.required) try c.w.writeAll(" required");
+    // the browser drops a newline right after the tag, so the value keeps its own
+    try c.w.print(">\n{f}</textarea>", .{esc(f.value)});
+    if (f.hint.len != 0) try c.w.print("<p class=\"hint\">{f}</p>", .{esc(f.hint)});
+    try c.w.writeAll("</div>");
+}
+
+// who wrote something, as plain text
+pub fn authorText(value: ui.Author) []const u8 {
+    return switch (value) {
+        .unknown => "someone",
+        .email, .user_name => |text| text,
+    };
+}
+
+// a user's name linking to their page, else the commit's email
+pub fn author(c: Ctx, value: ui.Author) !void {
+    switch (value) {
+        .unknown => try c.w.writeAll("someone"),
+        .email => |email| try c.w.print("{f}", .{esc(email)}),
+        .user_name => |name| try c.w.print("<a href=\"{f}\" class=\"link\">{f}</a>", .{ esc(try userUrl(c, name)), esc(name) }),
+    }
+}
+
+// someone's initial in a circle; the name beside it says who
+pub fn avatar(c: Ctx, value: ui.Author, size: enum { sm, md, lg }) !void {
+    const text = authorText(value);
+    const len = if (text.len == 0) 0 else std.unicode.utf8ByteSequenceLength(text[0]) catch 1;
+    try c.w.print("<span class=\"avatar avatar-{s}\" aria-hidden=\"true\">{f}</span>", .{ @tagName(size), esc(if (len == 0) "?" else text[0..@min(len, text.len)]) });
+}
+
 // a list search form, posting to the unsearched list url plus "/search"
 pub fn searchForm(c: Ctx, id: []const u8, label: []const u8, placeholder: []const u8, list_url: []const u8, search: []const u8) !void {
     try c.w.print(

@@ -109,11 +109,11 @@ fn commitView(c: Ctx, cm: *const Commits, commit: *const Commits.Commit) !void {
     );
     if (commit.merge) try mergePill(c);
     try c.w.print("</h2><dl class=\"facts\"><dt>Commit</dt><dd><code class=\"mono\">{f}</code></dd><dt>Author</dt><dd>", .{esc(commit.oid)});
-    try author(c, commit.author);
+    try html.author(c, commit.author);
     try c.w.writeAll("</dd>");
     if (commit.committer != .unknown) {
         try c.w.writeAll("<dt>Committer</dt><dd>");
-        try author(c, commit.committer);
+        try html.author(c, commit.committer);
         try c.w.writeAll("</dd>");
     }
     try c.w.writeAll("<dt>Committed</dt><dd>");
@@ -149,17 +149,8 @@ fn mergePill(c: Ctx) !void {
 
 fn person(c: Ctx, role: []const u8, value: ui.Author) !void {
     try c.w.print("<span>{s} ", .{role});
-    try author(c, value);
+    try html.author(c, value);
     try c.w.writeAll("</span>");
-}
-
-// a user's name linking to their page, else the commit's email
-fn author(c: Ctx, value: ui.Author) !void {
-    switch (value) {
-        .unknown => try c.w.writeAll("someone"),
-        .email => |email| try c.w.print("{f}", .{esc(email)}),
-        .user_name => |name| try c.w.print("<a href=\"{f}\" class=\"link\">{f}</a>", .{ esc(try html.userUrl(c, name)), esc(name) }),
-    }
 }
 
 // the counts that aren't zero, and the byte delta always, as haxy's stats box shows them

@@ -6,6 +6,7 @@ const commits = @import("commits.zig");
 const diff = @import("diff.zig");
 const files = @import("files.zig");
 const refs = @import("refs.zig");
+const threads = @import("threads.zig");
 const Ctx = html.Ctx;
 const esc = html.esc;
 
@@ -132,7 +133,10 @@ pub fn page(c: Ctx, data: *const ui.Repo) !void {
                 .diff => |*d| try diff.panel(c, d),
             },
             .refs => try refs.panel(c, data),
-            .discussions, .issues, .patches, .events, .undo, .settings => try c.w.writeAll("<div class=\"card\"><p class=\"muted\">This section isn't built yet.</p></div>"),
+            .discussions => try threads.panel(c, .discuss, &data.discussions),
+            .issues => try threads.panel(c, .issue, &data.issues),
+            .patches => try threads.panel(c, .patch, &data.patches),
+            .events, .undo, .settings => try c.w.writeAll("<div class=\"card\"><p class=\"muted\">This section isn't built yet.</p></div>"),
         }
         try c.w.writeAll("</div>");
     }

@@ -3,8 +3,8 @@
     .version = "0.0.0",
     .dependencies = .{
         .haxy = .{
-            .url = "git+https://github.com/xit-vcs/haxy#acd0f1afa9ff0357a2954c123f6796f947cc10eb",
-            .hash = "haxy-0.0.0-cS86Ft8NPAAiy-RZXz5S1dQ2_3EjSq3tg6SJrBjZVGwT",
+            .url = "git+https://github.com/xit-vcs/haxy#66c1ab659cb740810d785c6f56eb0645e9cf7273",
+            .hash = "haxy-0.0.0-cS86Fi8VPAAMQpRhEo6Rd5YPhmZ57v6pja4F1VcR1pcm",
         },
     },
     .paths = .{
