@@ -138,11 +138,18 @@ a user id is transport work; the context only receives the id.
    re-verify them inside the operation, not in the UI.
 
 Local mode yields an owner actor from the repo's git config (`localAuthor`).
-Server-only operations (fork drafts, members, tokens, undo) and local-only
-operations (sync) return a **capability** result, `unavailable_here`, which is
-distinct from denial so a tool list stays the same across modes and the
-message is accurate. Mode matrix to encode in tests: sync is local-only; undo
-is server and xit-only (local xit has no undo, `src/test/undo.zig:140`).
+Server-only operations (fork drafts, patch publish and merge, members,
+tokens, undo, subscribe and mute) and local-only operations (sync) return a
+**capability** result, `unavailable_here`, which is distinct from denial so a
+tool list stays the same across modes and the message is accurate. Mode
+matrix to encode in tests: sync is local-only; undo is server and xit-only
+(local xit has no undo, `src/test/undo.zig:140`); merge is server-only because
+`pch.merge` takes a server host (phase 3 finding).
+
+One accepted compatibility exception (phase 2 and 3 reviews): when a repo or
+tab disappears between a web handler's pre-authorization and the write, the
+response is now "repo not found" where the old handlers said "event not
+found".
 
 ### 3.3 Operations
 
@@ -385,7 +392,7 @@ failure, denial and `unavailable_here` for each slice operation.
 |---|---|---|
 | CreateThread (patch: branch and fork-draft paths) | rest of handleThreadNew | Patches.create |
 | EditThread | handleThreadEdit | submitEditedThread |
-| ResolveConflict (union result: remaining conflicts) | handleThreadResolve | submitResolution |
+| ResolveConflict (returns void: any write settles the conflict entry, so the core cannot report remaining conflicts; fields mirror `Event.Update.resolve`) | handleThreadResolve | submitResolution |
 | EditComment | handleCommentEdit | comment edit path |
 | RemoveThread / RemoveComment / RemoveAttachment | handleRemove | submitRemove |
 | Assign / Unassign | handleAssign / handleUnassign | thread tool buttons |
@@ -503,6 +510,26 @@ transport; token scopes; structured search filters; upstreaming.
 ## 9. Review log
 
 Raw reviews are in `docs/reviews/`.
+
+- 2026-11-09, phase 3 implemented test-first in three slices (edit/remove/
+  assign/notify; patch family and attachments; MCP registration), reviewed by
+  Codex (`docs/reviews/04-phase3-codex.md`) and fixed. Found and fixed along
+  the way: editing a fork draft on a SHA-256 repo failed because the draft was
+  opened with SHA-1 options (dead UI copy deleted); `handleNotify` wrote
+  notify entries for nonexistent threads (now `NotFound`); `DeleteFork` did not
+  bind the confirmation to the fork's repo. Review fixes: `delete_fork`
+  unregistered from MCP (it needs the password; a compile-time guard now
+  rejects any tool with a `password` field) pending the token work;
+  `merge_patch` gated behind `--allow-destructive`; exact attachment size
+  check before decoding and a 16 MiB stdio line bound; idempotence hints per
+  operation's no-op detection; post-commit failures in publish, fork removal
+  and mute return distinct errors with `changed = true`; resolve checks
+  existence before fields; patch state errors classified `conflict`; web
+  authorship preflight restored before body or header reads; merge matrix,
+  attachment byte and widget-level edit tests added. Suite: 177 tests, 22
+  tools (18 without the flag). Deferred, recorded in the review: HTTP-level
+  rejection-order tests, broader resolve coverage (patch, hunks, server),
+  publish/mute fault injection (no practical injection point found).
 
 - 2026-11-09, phases 0–2 implemented test-first in the fork on branch
   `domain-layer` by Opus 5.5 implementors, each phase reviewed by Codex
