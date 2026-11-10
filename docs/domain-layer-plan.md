@@ -285,10 +285,10 @@ handles them:
   as it effectively does today. `notify_action` enrichment moves out of
   `Repo.readNotify` into a helper the reads can call.
 - Viewer-dependent fields (`can_modify`, `notify_action`) stay in results,
-  computed from `ctx.user_id`. Phase 2 status: `can_modify` is filled by the
-  bridged reads; `notify_action` is still `null` from them because the
-  enrichment lives in `Repo.readNotify`, which only the page build calls.
-  Moving it into the helper described above is phase 4 work.
+  computed from `ctx.user_id`. Since phase 4 both are filled by the bridged
+  reads: `notify_action` comes from `domain.setNotifyActions`, which
+  `Repo.readNotify` calls too. It is null when logged out, in local mode and
+  on drafts.
 
 ### 3.5 MCP server
 
@@ -332,8 +332,12 @@ handles them:
     `SessionStore` (its init clears flash storage, `src/web.zig:3228`). The
     acting user is never selectable from tool arguments.
   - Phase 6 adds Streamable HTTP on the web listener.
-- **Destructive tools** (`remove_*`, `delete_repo`, `delete_fork`, user
-  deletion) are registered only with `--allow-destructive`.
+- **Destructive tools** are registered only with `--allow-destructive`. The
+  rule since phase 4: a tool is gated when a call destroys stored content or
+  history that no tool call can recreate (`remove_*`, `merge_patch`, `undo`,
+  `remove_key`). Operations that take a password (`delete_repo`,
+  `delete_fork`, `delete_user`, `register_user`, `update_user_settings`) are
+  not tools at all until the token work in phase 6.
 
 ## 4. Phases
 
@@ -510,6 +514,52 @@ transport; token scopes; structured search filters; upstreaming.
 ## 9. Review log
 
 Raw reviews are in `docs/reviews/`.
+
+- 2026-11-10, phase 4 implemented test-first in four slices (repo
+  operations; notifications and `notify_action`; user operations and the
+  delete page; MCP registration), reviewed by Codex
+  (`docs/reviews/05-phase4-codex.md`) and fixed. New operations: `CreateRepo`,
+  `UpdateRepoSettings`, `DeleteRepo`, `Grant`/`Revoke`/`Promote`/`Demote`,
+  `ProtectBranch`/`UnprotectBranch`/`SetDefaultBranch`, `Undo`, `Sync`
+  (`runWithProgress` takes the progress sink), `RegisterUser`,
+  `UpdateUserSettings`, `AddKey`, `RemoveKey`, `DeleteUser`
+  (`deleteAsOperator` is the password-free entry `haxy delete-user` uses; it
+  is a declaration, never an input field), `ListNotifications`, `MarkRead`,
+  `Dismiss`, and `setNotifyActions`, which the page build and the bridge reads
+  share. The done criterion holds: the only `evt.` calls left in `web.zig`
+  handlers are reads and login/logout, and the only `evt.consume` under
+  `src/ui` is the local page preparation in `Repo.zig` (phase 5).
+  Review: one blocker, fixed: `DeleteRepo`, `DeleteUser` and `DeleteFork`
+  checked the password against the account snapshot taken when the context
+  was built, which the web handler does before reading the body; each now
+  reloads the account (`domain.currentUser`) before the confirmation and
+  password checks. Also fixed: the member target name resolved from a fresh
+  admin moment; the branch length rule restored to "url-encoded name fits a
+  route" (a first cut had narrowed it to 170 raw bytes); post-commit failures
+  made distinct (`RepoRemovedDirKept`, `UserRemovedDirKept`,
+  `SyncMergedNotPushed`, `SyncPushedNotRefetched`, all `changed = true`) and
+  `Sync.Result` reports the stage a remote refused at and whether the merge
+  was applied; `notify.markRead` and `notify.dismiss` return what their
+  transaction saw instead of the operations inferring it; `UpdateRepoSettings`
+  requires `description` and refuses an owner tab role (no earlier path could
+  store one); TUI widgets no longer let a late authorization failure escape
+  the input loop; logged-out requests are refused before admin I/O again;
+  `Session.rememberSshKey` goes through `AddKey`. MCP: operations declare the
+  host kinds they run on (`pub const hosts`) and the server answers
+  `unavailable_here` from that before any local refresh; `sync` is annotated
+  destructive and open-world and skips the pre-call refresh; `undo` and
+  `remove_key` sit behind `--allow-destructive`; the password guard refuses
+  any field whose name contains `password`, nested types included; unsigned
+  inputs declare `minimum: 0`; every tool carries `openWorldHint`. Suite: 299
+  tests, 38 tools (32 without the flag). Verified by hand after the fixes: a
+  curl walk of every rewired form through hyperhaxy, MCP sessions in operator
+  and local mode, local web sync against a file remote, and `haxy
+  delete-user`. Deferred, recorded in the review: an HTTP-level test harness
+  (asked for a third time); tests for a refusal at sync's refetch stage, late
+  authorization loss in widgets and `rememberSshKey` at the key limit; the
+  settings UI would show an owner tab role as "members" and save it as write
+  (unreachable today); a removed account's name can be registered again, so
+  anything keyed by name could resolve to the new account.
 
 - 2026-11-09, phase 3 implemented test-first in three slices (edit/remove/
   assign/notify; patch family and attachments; MCP registration), reviewed by
