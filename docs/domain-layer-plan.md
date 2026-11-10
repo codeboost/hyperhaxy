@@ -441,6 +441,18 @@ widget calls `evt.consume` directly. Handler length is not a criterion.
    loaders; `Patches.init` loses `*ui.Session`.
 3. `Repo.init` composes the reads with one open repo via `runOpen`.
 4. Snapshot tests: JSON of a fixed set of routes identical before and after.
+   **Taken first, before any loader changes**, with the HTTP harness
+   (`src/test/web/harness.zig`, `getJson`): whole-page comparison, object keys
+   sorted and nothing else reordered; `session.now` and `session.ansi_art`
+   replaced by sentinels; ids mapped to stable names through an explicit
+   table built from the fixture, in fields and in urls, never by blanket
+   replacement of hex strings; commit times fixed at arrangement; a local
+   repo in a named child directory, since its directory name is displayed.
+   Each snapshot from fresh or cloned data, because GETs consume flashes and
+   mark notifications read. The route corpus is in section 6 of
+   `docs/reviews/06-http-harness-codex.md`. The long ref name fault (review
+   log, 2026-11-10 harness entry) is fixed before baselines are recorded, so
+   a 500 is never a baseline.
 
 ### Phase 6: MCP over HTTP and personal tokens (1.5 weeks)
 
@@ -515,6 +527,68 @@ transport; token scopes; structured search filters; upstreaming.
 
 Raw reviews are in `docs/reviews/`.
 
+- 2026-11-10, HTTP-level test harness, built between phases 4 and 5 after
+  three reviews asked for it. `src/test/web/harness.zig` drives
+  `web.serveConnection` in process: request bytes in, response bytes out, on
+  a server host over temp data (the domain fixture's cast) or a local repo,
+  with a cookie jar, a strict response parser, several requests on one
+  connection, a body that is declared and withheld (any read past the head
+  fails the test), and a hook that runs between the request head and its
+  body. 357 tests in `src/test/web/` cover every POST route in both route
+  tables: success, each form failure with its retained fields, logged out, a
+  removed account's session, too low a role, a private repo answered as a
+  missing one, malformed input, local mode, and real conflicts made by two
+  local repos synced through a file remote. Each test was mutated once to
+  show it fails. Suite: 656 tests.
+  **Parity.** The harness and its tests import only `std`, `xit`, `web.zig`
+  and `event.zig`, so the same files run against `66c1ab6`, the last commit
+  before the domain layer (with the `serveConnection` split, the build line
+  and the attachment fix below applied there). Result: 345 of 357 pass at
+  `66c1ab6`; all 357 pass today. The twelve that fail there are the complete
+  list of web behaviour the refactor changed, each asserted as today's
+  behaviour under a `// differs from 66c1ab6:` comment:
+  a removed account's stale session posting user settings or a key with a
+  bad body is refused 403 before the body is read (was form feedback;
+  review 05 B2); subscribing to a thread that does not exist is 404 (was a
+  303 that wrote a notify entry; review 04 A); publishing someone else's
+  draft or an id that names none is 404 (was 500; review 04 F); attaching to
+  a comment's id says "attachment target not found" (was "repo not found";
+  review 04 G); and, first listed and accepted in this review: authorization
+  runs again after the body, so an owner demoted, a member revoked or a tab
+  turned off while the body is in flight refuses the write (403 when the
+  repo stays visible, 404 otherwise; was 303 with the write done); merging a
+  patch id that names no patch is 404 (was 500); a local host answers 404 to
+  a server-style thread url whatever the body says (was a required-title
+  flash for a page that does not exist; Codex said restore, kept because
+  restoring means validating the title in the adapter).
+  **Regressions the harness found, fixed:** `handleThreadNew`,
+  `handlePatchNew` and `handleAttach` resolved the repo or target before
+  checking the session, so a logged-out POST to a url naming no repo got 404
+  where it had got 403 "log in to make changes"; each checks `hasSession`
+  first again.
+  **Faults that predate the refactor, found on the way.** Fixed:
+  `sendAttachment` freed the url-encoded file name with the wrong length on
+  every download (`ui.urlEncodeRef` returns less than it allocates); it now
+  comes from the function's arena. Not fixed, each needs its own decision:
+  a branch or tag whose url-encoded name exceeds 512 bytes (193 raw bytes
+  are enough) makes every page of the repo answer 500 `RouteTooLong`, since
+  every repo page builds the refs view, and anyone with write access can push
+  one; a form body shorter than its declared length is taken as the whole
+  form; in local mode a patch form failure other than a missing title
+  answers 500 `InvalidFormFeedback`; closing a merged patch and merging one
+  twice answer 500 `PatchAlreadyMerged`; a truncated upload answers 500
+  `EndOfStream`.
+  Reviewed by Codex (`docs/reviews/06-http-harness-codex.md`): harness and
+  production changes sound; the fix round added the withheld-body and
+  keep-alive checks, repaired a flash-once test that used a second browser,
+  an absence check that passed on a broken page and a squash test with one
+  commit, pinned the attachment limit as a literal, and filled patch edit,
+  close and reopen, and the refusal loops whose names claimed more actions
+  than they ran. Not reachable over HTTP: a conflict in a patch's status,
+  revision or target branch; merging a fork-backed patch (needs a push);
+  post-commit cleanup failures; notification paging past one window;
+  duplicate request headers. Still to do before the loader split: the
+  whole-page snapshot baselines (phase 5, step 4).
 - 2026-11-10, phase 4 implemented test-first in four slices (repo
   operations; notifications and `notify_action`; user operations and the
   delete page; MCP registration), reviewed by Codex
