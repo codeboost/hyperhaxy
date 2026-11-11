@@ -15,7 +15,8 @@ each is a candidate for an upstream fix on its own.
 
 ### 1.1 A long branch or tag name breaks every page of its repo
 
-**Do this before phase 5 records page snapshots.**
+(Phase 5 recorded its page snapshots without fixing this; the arranged data
+holds no such ref. It is still the most serious open fault.)
 
 A branch or tag whose url-encoded name is longer than 512 bytes makes the
 repo's pages answer 500 `RouteTooLong`, as HTML and as JSON, for every reader.
@@ -218,3 +219,84 @@ keeping.
 The attachment fix (1.4), the long ref name fix (1.1) and the truncated-body
 check (1.2) do not depend on the domain layer and could go upstream as their
 own changes.
+
+## 5. Added in phase 5 (2026-11-11)
+
+Found while adding the reads and recomposing the pages. References are to the
+phase 5 tree. Phase 6, step 0 in the plan covers the largest item (result
+types of their own for the reads a machine calls, and a bound on replies) and
+is not repeated here.
+
+### 5.1 Faults that predate the domain layer
+
+- **A file or directory whose name has a space cannot be addressed by any
+  url.** The files route takes `path:` raw: it is not percent-decoded on the
+  way in and not encoded when a link is written. `path:dir%20A` and
+  `path:tok%20plus.txt` answer 404, and a raw space cannot appear in a request
+  line. `path:dir%2541` is also 404 where `path:dir%41` works. The diff
+  route's `path` is handled the same way and probably shows "no changes" for
+  such a file (read, not run). Seen by: the edges snapshots
+  (`src/test/web/golden/edges/`, the `path:` cases), which record today's
+  answers. Fix: decode the path where the route is read and encode it where
+  links are built, as phase 5 did for searches and refs; the edges goldens
+  for those cases then change on purpose.
+- **Pages that probably answer 500 for an id that names nothing** (read from
+  the code, not run): the commits page with a `from` that is a well-formed
+  oid of no commit (`Commits.zig`, the plain-log walk); the diff page and the
+  fork diff page with an object oid that does not exist (`Diff.init`,
+  `Fork.zig`). The reads check the oid first and answer not found.
+- **The drafts window counts a draft whose fork was deleted** while leaving
+  it out of the list (`Patches.zig`, the drafts index size), on the page and
+  in `ListPatches` alike.
+- **The files page at a patch revision does not check the patch tab**, nor
+  does the revision diff. The review accepted this as policy (turning the tab
+  off hides fork browsing, not the repo's revision files); it is written
+  here so phase 6 carries the same rule over HTTP on purpose.
+
+### 5.2 Left open by phase 5
+
+- **A tool error does not say which input was wrong.** A contradictory
+  combination answers `get_diff failed (invalid_input): InvalidReadArguments`
+  and the caller must work out which rule it broke from the schema notes.
+- **Description details**: `list_files` says it preloads "up to about 2 MB"
+  where about 4 MB was measured (one file can cross the budget and the README
+  is exempt); the shared fork note names inputs (`ref_kind`, `patchrev`) that
+  `get_commit` and `get_diff` do not have; `read_file` says "up to 5000
+  lines" but a window also stops at a cell budget.
+- **The user page and the fork page** (`User.init`, `Fork.init`) still decide
+  visibility with `session.userId()`, which is not checked against removed
+  accounts, while the repo page and the notifications header use the
+  session's checked context (`Session.pageCtx`). The snapshots pin today's
+  behaviour; moving these two pages onto `pageCtx` would make all four
+  agree.
+- **The local `ListPatches` drafts view** returns an empty window, not
+  "unavailable here", because local repos have no drafts. Accepted; noted in
+  the schema.
+
+### 5.3 Tests still missing
+
+- A truncated diff (needs about a million changed lines).
+- Storage failures inside xit repos: objects and refs live in one db file,
+  so the tests that remove or corrupt a loose object only run on git.
+- HTML output and the TUI: the snapshots compare JSON. A JSON request does
+  build the widget root, so construction is exercised, but nothing asserts
+  links, forms or navigation on the rendered page.
+- Nine of the nineteen account-read tests (`src/test/domain/accounts.zig`)
+  were never shown able to fail; the mutation run covered the other ten.
+  Their order checks compare sets, because the order of repos active in the
+  same second is by id.
+- A second window of notifications.
+- The snapshot tests share one frozen clock and one random source
+  (`snapshot.zig`, `Det`) and must run one at a time. Zig runs a test binary's
+  tests serially today; if that changes, the state has to become per world.
+
+### 5.4 Housekeeping
+
+- The goldens are 18 MB on disk in 411 files (well under 2 MB compressed).
+  Each repo page snapshot carries every tab's data, because the page does.
+- Updating goldens is deliberate and manual:
+  `HAXY_SNAPSHOT_UPDATE=1 zig build test -Dtest-filter="web: page snapshots"`.
+  Update mode does not delete goldens that are no longer taken.
+- The edges goldens were recorded from `b123eaf` to prove parity with the
+  code before phase 5. That check is done; from here they are ordinary
+  baselines of the current tree.

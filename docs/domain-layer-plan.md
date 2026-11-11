@@ -439,7 +439,16 @@ widget calls `evt.consume` directly. Handler length is not a criterion.
    applies. Decoding moves to route adapters.
 2. Split `Issues`/`Patches`/`Discussions` loaders into window and detail
    loaders; `Patches.init` loses `*ui.Session`.
-3. `Repo.init` composes the reads with one open repo via `runOpen`.
+3. `Repo.init` and the reads share one loader core over one open repo.
+   (As first written: "`Repo.init` composes the reads via `runOpen`". That
+   was dropped in the phase 5 review: each read is deliberately stricter
+   than its page, or returns one window where the page needs several, so a
+   tab calling a read would either change the page or loosen the read. The
+   page builds one context from the session's checked state, resolves
+   through `domain.resolveRepo`, refreshes a local repo through
+   `RefreshLocal.runOpen`, and calls the same loader functions the reads
+   call; where a loader has a fallback the page wants and a read must not
+   have, it has a lenient entry for the page and a strict one for the read.)
 4. Snapshot tests: JSON of a fixed set of routes identical before and after.
    **Taken first, before any loader changes**, with the HTTP harness
    (`src/test/web/harness.zig`, `getJson`): whole-page comparison, object keys
@@ -453,9 +462,34 @@ widget calls `evt.consume` directly. Handler length is not a criterion.
    `docs/reviews/06-http-harness-codex.md`. The long ref name fault (review
    log, 2026-11-10 harness entry) is fixed before baselines are recorded, so
    a 500 is never a baseline.
+   (As done, 2026-11-11: times and ids are fixed at the source by a
+   deterministic test `std.Io`, which made most of the normalising above
+   unnecessary; the long ref name fault was not fixed first, so the arranged
+   data holds no such ref.)
 
 ### Phase 6: MCP over HTTP and personal tokens (1.5 weeks)
 
+0. **Before the server is offered over HTTP: result contracts for the reads
+   a machine calls, and a bound on responses.** Phase 5 bridged the reads
+   over the page loaders and returns their structs, which are built for a
+   renderer. From the phase 5 review (`docs/reviews/07-phase5-codex.md`, the
+   last table): `list_files` returns bounded metadata with a cursor past
+   1000 entries and stops preloading file contents (a 1000-entry directory
+   measured 6.3 MB, 39.2 MB in the worst case); `read_file` reads the one
+   file directly and returns an explicit `next_line` in the input's 1-based
+   convention; `get_diff` returns machine-readable hunks with explicit
+   paths, the text of added and removed files, continuation and truncation;
+   the commit reads return decoded refs and real author and committer
+   metadata (the page struct keeps only an email and "unknown"); `get_repo`
+   and the log stop disagreeing about the default branch; the account and
+   thread lists select stable public fields and drop renderer state
+   (`handle`, `route`, `find_available`, ordering keys, web urls). Results
+   that need information the page struct lost get a domain result type of
+   their own over the shared loader core; lossless reshaping can live in an
+   MCP presentation step. The page structs stay as they are. Separately,
+   the 16 MiB constant bounds incoming lines only: nothing bounds a reply,
+   which is serialized twice (text and structured content). Give replies and
+   the work behind them a budget.
 1. Tokens: `CreateToken`, `RevokeToken`, `ListTokens`; stored hashed under
    the data dir next to `SessionStore` (never as events). Creation requires
    the logged-in user's password; tokens have an optional expiry and are
@@ -527,6 +561,84 @@ transport; token scopes; structured search filters; upstreaming.
 
 Raw reviews are in `docs/reviews/`.
 
+- 2026-11-11, phase 5 (reads and page composition), in eight slices, reviewed
+  by Codex (`docs/reviews/07-phase5-codex.md`) and fixed.
+  **Baselines first.** Before any loader changed, 280 whole-page JSON
+  snapshots were recorded through the HTTP harness
+  (`src/test/web/snapshot.zig`, `world.zig`, `pages.zig`, goldens in
+  `src/test/web/golden/`) over four arranged worlds: a sha1 server (191), a
+  sha256 server (27), a local git repo (31) and a local xit repo (31), for
+  the viewers anonymous, owner, member, read-only member, stranger and
+  second owner. Times and ids are fixed at the source instead of normalised:
+  the world serves through a test `std.Io` with a frozen clock and a seeded
+  random source, so only `session.now` and `session.ansi_art` are replaced,
+  and ids are renamed for readability only. Six deliberate loader breaks
+  each failed snapshots. After the review, 131 more in two edge worlds
+  (searches, finds and ref cursors with `%41` beside `A`, `+`, space,
+  multi-byte and `/`; `label:` and `assignee:`; included and excluded
+  selections; second comment windows of each thread kind; a conflict
+  beyond the first window), recorded from `b123eaf`, the commit before
+  phase 5, and compared on the result. **Outcome: all 411 are byte-identical
+  before and after phase 5, and the original 280 also pass unchanged at
+  `66c1ab6`, the code before the domain layer.** The snapshot tests share
+  one clock and random source and must run one at a time. Update command:
+  `HAXY_SNAPSHOT_UPDATE=1 zig build test -Dtest-filter="web: page snapshots"`.
+  **Reads.** New operations, bridged over the loaders and then moved onto
+  the split pieces: `GetRepo`, `ListFiles`, `ReadFile`, `ListRefs`
+  (`src/domain/files.zig`); `ListCommits`, `GetCommit`, `Diff`
+  (`history.zig`); `ListDiscussions`, `ListEvents` (`reads.zig`);
+  `ListUsers`, `ListRepos`, `ListForks` and the fork resolver
+  (`accounts.zig`). Conventions settled here: a ref is a kind plus a decoded
+  name; every read has `runOpen(self, ctx, repo_kind, repo_opts, repo,
+  resolved)` that makes its own tab and role checks, and `run` makes the same
+  checks before opening the repo; a `fork_id` input reads a fork as the fork
+  page shows it; a thing that does not exist is `NotFound`, inputs that
+  contradict each other are the new `InvalidReadArguments`, a directory read
+  as a file is `NotAFile` and the reverse `NotADirectory`; the reads are
+  stricter than the pages (an object id that names nothing is not found,
+  where the page shows an empty tab).
+  **Loaders.** `Issues`, `Patches` and `Discussions` each have a window
+  loader and a detail loader that `init` composes and the reads call
+  (`ListIssues` loads one window where it loaded three and the labels;
+  `GetIssue` one entry where it loaded three windows). Nothing in a loading
+  path takes a `*ui.Session`. Percent-decoding moved from the loaders to
+  where the route is read; no bridge encodes for a loader any more.
+  `Repo.init` builds one context from the session's own checked moment and
+  user (`Ctx.initServerVouched`, `Session.pageCtx`), resolves through
+  `domain.resolveRepo`, and refreshes a local repo through
+  `RefreshLocal.runOpen`; no file under `src/ui/` calls `evt.consume`. No
+  tab calls a read (phase 5, item 3, as amended).
+  **Review.** Two blockers, fixed: `ListCommits` refused `from` together
+  with `merge`, so a merge's log could not be paged; and reads reported
+  storage failures as facts (every failure reading a commit was not found; a
+  failed read of a file's content came back as an empty file marked loaded;
+  an unreadable event db gave an empty window; a draft whose fork could not
+  be opened was skipped; an unreadable ref was "no such ref"). Each loader
+  with a fallback now has a lenient entry for the page and a strict one for
+  the reads, which catch only the errors that mean "not there" and let the
+  rest out as `internal`. Also fixed: denial before the repo is opened;
+  invalid combinations classified as invalid input; the page context taken
+  from the session instead of a second moment read (a stale session and its
+  page now agree, tested), the notifications header included; the fork log's
+  stop point described as it is (the exact base commit, no ancestry check).
+  Accepted as they are: `readOnlyHint` false on reads that refresh a local
+  repo first and true on the three server-only ones; `read_file` served
+  without `find`; a patch revision's files and diff readable while the patch
+  tab is off, as on the page; `ListPatches` drafts empty in local mode.
+  Page-visible changes, on storage failure only: a merge commit or a ref
+  that exists but cannot be read answers 500 where it answered 404.
+  MCP: 44 tools, 50 with `--allow-destructive`. The results are the page
+  structs and several are a poor contract for a machine caller
+  (`list_files` preloads contents and cannot page, `get_diff` is in the
+  renderer's format, commit authors are reduced to an email); descriptions
+  now say how to page each as it is, and result types of their own are phase
+  6, step 0, with a bound on replies (none exists today).
+  Suite: 788 tests. Verified after the fixes: the full suite; the HTTP tests
+  at `66c1ab6` (the same twelve documented differences); the snapshots at
+  `b123eaf` and `66c1ab6`; MCP sessions by hand over stdio. Not tested: a
+  truncated diff; storage failures inside xit repos (objects and refs live
+  in one db file, nothing to remove); HTML output (the snapshots are JSON);
+  nine account-read tests that were never shown able to fail.
 - 2026-11-10, HTTP-level test harness, built between phases 4 and 5 after
   three reviews asked for it. `src/test/web/harness.zig` drives
   `web.serveConnection` in process: request bytes in, response bytes out, on
