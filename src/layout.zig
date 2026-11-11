@@ -6,29 +6,12 @@ const icons = @import("icons.zig");
 const repo_page = @import("pages/repo.zig");
 const Ctx = html.Ctx;
 const esc = html.esc;
+const site_name = @import("frontend.zig").frontend.site_name;
 
-// the document up to the opening of the page's main content
-pub fn begin(c: Ctx, page: *const ui.Page, title: []const u8) !void {
-    try c.w.writeAll(
-        \\<!doctype html>
-        \\<html lang="en">
-        \\<head>
-        \\<meta charset="utf-8">
-        \\<meta name="viewport" content="width=device-width, initial-scale=1">
-        \\
-    );
-    if (title.len == 0)
-        try c.w.writeAll("<title>haxy</title>\n")
-    else
-        try c.w.print("<title>{f} · haxy</title>\n", .{esc(title)});
-    try c.w.writeAll(
-        \\<link rel="stylesheet" href="/style.css">
-        \\<script src="/app.js" defer></script>
-        \\</head>
-        \\<body>
-        \\<header class="site-header"><div class="container"><div class="header-row">
-    );
-    try c.w.print("<a href=\"{s}\" class=\"logo\" aria-label=\"haxy home\"><span class=\"logo-mark\">{s}</span><span class=\"logo-text\">haxy<span class=\"logo-dot\">.</span></span></a>", .{ try html.url(c, .home_about), icons.git_branch });
+// the site header, up to the opening of the page's main content
+pub fn header(c: Ctx, page: *const ui.Page) !void {
+    try c.w.writeAll("<header class=\"site-header\"><div class=\"container\"><div class=\"header-row\">");
+    try c.w.print("<a href=\"{s}\" class=\"logo\" aria-label=\"{s} home\"><span class=\"logo-mark\">{s}</span><span class=\"logo-text\">{s}</span></a>", .{ try html.url(c, .home_about), site_name, icons.git_branch, site_name });
 
     const in_repo = switch (page.*) {
         .repo => |*repo| blk: {
@@ -68,10 +51,6 @@ pub fn begin(c: Ctx, page: *const ui.Page, title: []const u8) !void {
     try c.w.writeAll("</div></div>");
     if (page.* == .repo) try repo_page.tabs(c, &page.repo);
     try c.w.print("</div></header>\n<main class=\"container main{s}\">\n", .{if (page.* == .repo) " main-tabs" else ""});
-}
-
-pub fn end(c: Ctx) !void {
-    try c.w.writeAll("\n</main>\n</body>\n</html>\n");
 }
 
 fn navItem(c: Ctx, href: []const u8, label: []const u8, current: bool) !void {

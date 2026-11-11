@@ -12,14 +12,14 @@ const repo = @import("pages/repo.zig");
 const user = @import("pages/user.zig");
 const Ctx = html.Ctx;
 
-// haxy's render_html hook: the whole document for one page
+// haxy's renderHtml hook: the body for one page
 pub fn page(allocator: std.mem.Allocator, p: *const ui.Page, session: *const ui.Session.Data, writer: *std.Io.Writer) anyerror!void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const c: Ctx = .{ .w = writer, .arena = &arena, .session = session };
-    try layout.begin(c, p, try title(c, p));
+    try layout.header(c, p);
     try body(c, p);
-    try layout.end(c);
+    try writer.writeAll("\n</main>");
 }
 
 fn body(c: Ctx, p: *const ui.Page) !void {
@@ -38,33 +38,6 @@ fn body(c: Ctx, p: *const ui.Page) !void {
         .fork => |*data| try fork.page(c, data),
         .not_found => try not_found.page(c),
     }
-}
-
-fn title(c: Ctx, p: *const ui.Page) ![]const u8 {
-    const route = c.session.current_page;
-    switch (route) {
-        .home_user, .user_user, .repo_user, .fork_user => {
-            if (!c.loggedIn()) return "Log in";
-            return switch (route.userTab().view) {
-                .notifications => "Notifications",
-                .settings, .keys, .delete => "Account",
-            };
-        },
-        .home_repo_new, .user_repo_new, .repo_repo_new, .fork_repo_new => return "New repository",
-        .home_user_new, .user_user_new, .repo_user_new, .fork_user_new => return "Create an account",
-        .home_users => return "Users",
-        else => {},
-    }
-    return switch (p.*) {
-        .home => |*data| data.about.title orelse "",
-        .user => |*data| data.user.name,
-        .repo => |*data| if (data.header.owner_name.len == 0)
-            data.header.name
-        else
-            try c.arena.allocator().print("{s}:{s}", .{ data.header.owner_name, data.header.name }),
-        .fork => |*data| try c.arena.allocator().print("{s}:{s}", .{ data.header.forker_name, data.header.name }),
-        .not_found => "Page not found",
-    };
 }
 
 // the page's user tab data
